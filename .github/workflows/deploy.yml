@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure kubectl
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+
+    - name: Set image tag
+      run: |
+        echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+    - name: Update Kubernetes manifests
+      run: |
+        sed -i "s/:latest/:${{ env.IMAGE_TAG }}/g" infrastructure/kubernetes/backend-deployment.yaml
+        sed -i "s/:latest/:${{ env.IMAGE_TAG }}/g" infrastructure/kubernetes/frontend-deployment.yaml
+
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl apply -f infrastructure/kubernetes/namespace.yaml
+        kubectl apply -f infrastructure/kubernetes/configmap.yaml
+        kubectl apply -f infrastructure/kubernetes/secrets.yaml
+        kubectl apply -f infrastructure/kubernetes/backend-deployment.yaml
+        kubectl apply -f infrastructure/kubernetes/backend-service.yaml
+        kubectl apply -f infrastructure/kubernetes/frontend-deployment.yaml
+        kubectl apply -f infrastructure/kubernetes/frontend-service.yaml
+        kubectl apply -f infrastructure/kubernetes/ingress.yaml
+        kubectl apply -f infrastructure/kubernetes/hpa.yaml
+
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/gbp-backend -n gbp --timeout=5m
+        kubectl rollout status deployment/gbp-frontend -n gbp --timeout=5m
+
+    - name: Verify deployment
+      run: |
+        kubectl get pods -n gbp
+        kubectl get svc -n gbp

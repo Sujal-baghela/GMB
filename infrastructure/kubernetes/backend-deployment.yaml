@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gbp-backend
+  namespace: gbp
+  labels:
+    app: gbp-backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gbp-backend
+  template:
+    metadata:
+      labels:
+        app: gbp-backend
+    spec:
+      containers:
+      - name: backend
+        image: docker.io/gbp/backend:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: gbp-config
+              key: NODE_ENV
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: gbp-secrets
+              key: JWT_SECRET
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: gbp-secrets
+              key: DATABASE_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: gbp-secrets
+              key: REDIS_URL
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000

@@ -1,0 +1,885 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Role {
+  ADMIN
+  OWNER
+  MANAGER
+  TEAM_LEAD
+  ANALYST
+  VIEWER
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+  TRIALING
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  UNCOLLECTIBLE
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum ReviewStatus {
+  APPROVED
+  REJECTED
+  FLAGGED
+  RESPONDED
+  ARCHIVED
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum PhotoStatus {
+  UPLOADING
+  ACTIVE
+  ARCHIVED
+  FAILED
+}
+
+enum NotificationType {
+  REVIEW_RECEIVED
+  REVIEW_REPLIED
+  PHOTO_UPLOADED
+  POST_PUBLISHED
+  ANALYTICS_REPORT
+  BILLING_ALERT
+  TEAM_INVITATION
+  SYSTEM_ALERT
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum AuditActionType {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  SYNC
+  PERMISSION_CHANGE
+}
+
+enum AuditResourceType {
+  USER
+  ORGANIZATION
+  WORKSPACE
+  TEAM
+  LOCATION
+  REVIEW
+  POST
+  PHOTO
+  SUBSCRIPTION
+  PAYMENT
+  API_KEY
+}
+
+enum OAuthProvider {
+  GOOGLE
+}
+
+enum TokenType {
+  ACCESS
+  REFRESH
+  API_KEY
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum SyncJobType {
+  REVIEWS_SYNC
+  ANALYTICS_SYNC
+  LOCATIONS_SYNC
+  BUSINESS_ACCOUNTS_SYNC
+  POSTS_SYNC
+  PHOTOS_SYNC
+}
+
+// ============================================================================
+// USERS & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id                    String            @id @default(cuid())
+  email                 String            @unique
+  firstName             String?
+  lastName              String?
+  password              String?
+  passwordHash          String?
+  avatar                String?
+  bio                   String?
+  phone                 String?
+  emailVerified         DateTime?
+  emailVerificationToken String?
+  passwordResetToken    String?
+  passwordResetExpiry   DateTime?
+  isActive              Boolean           @default(true)
+  lastLoginAt           DateTime?
+  lastActivityAt        DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  deletedAt             DateTime?
+
+  // Relations
+  oauthAccounts         OAuthAccount[]
+  sessions              Session[]
+  apiKeys               ApiKey[]
+  organizationUsers     OrganizationUser[]
+  workspaceUsers        WorkspaceUser[]
+  teamMembers           TeamMember[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  reviewReplies         ReviewReply[]
+  posts                 Post[]
+  photos                Photo[]
+
+  @@index([email])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model OAuthAccount {
+  id                String    @id @default(cuid())
+  userId            String
+  provider          OAuthProvider
+  providerAccountId String    @unique
+  refreshToken      String?
+  accessToken       String?
+  expiresAt         DateTime?
+  tokenType         String?
+  scope             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([provider])
+}
+
+model Session {
+  id                String    @id @default(cuid())
+  userId            String
+  token             String    @unique
+  refreshToken      String?   @unique
+  userAgent         String?
+  ipAddress         String?
+  expiresAt         DateTime
+  isRevoked         Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  keyHash           String    @unique
+  lastUsedAt        DateTime?
+  isActive          Boolean   @default(true)
+  expiresAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+// ============================================================================
+// ROLES & PERMISSIONS
+// ============================================================================
+
+model RoleEntity {
+  id                String    @id @default(cuid())
+  name              Role      @unique
+  description       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  rolePermissions   RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id                String    @id @default(cuid())
+  name              String    @unique
+  description       String?
+  category          String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  rolePermissions   RolePermission[]
+
+  @@index([category])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id                String    @id @default(cuid())
+  roleId            String
+  permissionId      String
+
+  role              RoleEntity @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission        Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================================
+// ORGANIZATIONS & WORKSPACES
+// ============================================================================
+
+model Organization {
+  id                String    @id @default(cuid())
+  name              String
+  slug              String    @unique
+  description       String?
+  logo              String?
+  website           String?
+  industry          String?
+  size              String?
+  timezone          String?
+  locale            String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  users             OrganizationUser[]
+  workspaces        Workspace[]
+  subscriptions     Subscription[]
+  auditLogs         AuditLog[]
+  integrations      Integration[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+model OrganizationUser {
+  id                String    @id @default(cuid())
+  organizationId    String
+  userId            String
+  role              Role      @default(VIEWER)
+  joinedAt          DateTime  @default(now())
+  invitedBy         String?
+  invitedAt         DateTime?
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("organization_users")
+}
+
+model Workspace {
+  id                String    @id @default(cuid())
+  organizationId    String
+  name              String
+  slug              String
+  description       String?
+  icon              String?
+  isDefault         Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users             WorkspaceUser[]
+  teams             Team[]
+  locations         Location[]
+  businessAccounts  BusinessAccount[]
+  reviews           Review[]
+  posts             Post[]
+  photos            Photo[]
+  analytics         Analytics[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("workspaces")
+}
+
+model WorkspaceUser {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  userId            String
+  role              Role      @default(VIEWER)
+  joinedAt          DateTime  @default(now())
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("workspace_users")
+}
+
+model Team {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?
+  avatar            String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members           TeamMember[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id                String    @id @default(cuid())
+  teamId            String
+  userId            String
+  role              Role      @default(VIEWER)
+  joinedAt          DateTime  @default(now())
+
+  team              Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+// ============================================================================
+// SUBSCRIPTIONS & BILLING
+// ============================================================================
+
+model Plan {
+  id                String    @id @default(cuid())
+  name              SubscriptionPlan @unique
+  displayName       String
+  description       String?
+  price             Int       // in cents
+  currency          String    @default("USD")
+  billingInterval   String    @default("month")
+  maxLocations      Int       @default(0) // 0 = unlimited
+  maxTeamMembers    Int       @default(0)
+  maxApiKeys        Int       @default(0)
+  features          String[]  @default([])
+  stripePriceId     String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  subscriptions     Subscription[]
+
+  @@index([isActive])
+  @@map("plans")
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  organizationId    String
+  planId            String
+  status            SubscriptionStatus @default(ACTIVE)
+  stripeSubscriptionId String?
+  currentPeriodStart DateTime
+  currentPeriodEnd  DateTime
+  trialEndDate      DateTime?
+  canceledAt        DateTime?
+  cancelReason      String?
+  autoRenew         Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan              Plan      @relation(fields: [planId], references: [id])
+  invoices          Invoice[]
+  payments          Payment[]
+  coupons           SubscriptionCoupon[]
+
+  @@unique([organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Coupon {
+  id                String    @id @default(cuid())
+  code              String    @unique
+  description       String?
+  discountType      String    @default("percentage") // percentage | fixed
+  discountValue     Int
+  maxUses           Int?
+  currentUses       Int       @default(0)
+  expiresAt         DateTime?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  subscriptions     SubscriptionCoupon[]
+
+  @@index([isActive])
+  @@map("coupons")
+}
+
+model SubscriptionCoupon {
+  id                String    @id @default(cuid())
+  subscriptionId    String
+  couponId          String
+  appliedAt         DateTime  @default(now())
+
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  coupon            Coupon    @relation(fields: [couponId], references: [id])
+
+  @@unique([subscriptionId, couponId])
+  @@map("subscription_coupons")
+}
+
+model Invoice {
+  id                String    @id @default(cuid())
+  subscriptionId    String
+  stripeInvoiceId   String?
+  status            InvoiceStatus
+  amount            Int       // in cents
+  currency          String    @default("USD")
+  dueDate           DateTime
+  paidAt            DateTime?
+  description       String?
+  items             String[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model Payment {
+  id                String    @id @default(cuid())
+  subscriptionId    String
+  invoiceId         String?
+  stripePaymentId   String?
+  amount            Int       // in cents
+  currency          String    @default("USD")
+  status            PaymentStatus
+  paymentMethod     String?
+  description       String?
+  failureReason     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoice           Invoice?  @relation(fields: [invoiceId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payments")
+}
+
+// ============================================================================
+// GOOGLE BUSINESS PROFILE
+// ============================================================================
+
+model BusinessAccount {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  googleAccountId   String    @unique
+  name              String
+  email             String?
+  verificationState String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  locations         Location[]
+  oauthTokens       OAuthToken[]
+  syncJobs          SyncJob[]
+
+  @@index([workspaceId])
+  @@index([googleAccountId])
+  @@map("business_accounts")
+}
+
+model OAuthToken {
+  id                String    @id @default(cuid())
+  businessAccountId String
+  accessToken       String
+  refreshToken      String?
+  expiresAt         DateTime
+  scope             String
+  tokenType         String    @default("Bearer")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  businessAccount   BusinessAccount @relation(fields: [businessAccountId], references: [id], onDelete: Cascade)
+
+  @@index([businessAccountId])
+  @@unique([businessAccountId]) // One token per account
+  @@map("oauth_tokens")
+}
+
+model Location {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  businessAccountId String
+  googleLocationId  String    @unique
+  name              String
+  address           String?
+  city              String?
+  state             String?
+  zipCode           String?
+  country           String?
+  phone             String?
+  website           String?
+  businessType      String?
+  googleRating      Float?
+  googleReviewCount Int       @default(0)
+  latitude          Float?
+  longitude         Float?
+  businessHours     String?   // JSON
+  attributes        String?   // JSON
+  syncedAt          DateTime?
+  lastErrorAt       DateTime?
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  businessAccount   BusinessAccount @relation(fields: [businessAccountId], references: [id], onDelete: Cascade)
+  reviews           Review[]
+  posts             Post[]
+  photos            Photo[]
+  analytics         Analytics[]
+
+  @@index([workspaceId])
+  @@index([businessAccountId])
+  @@index([googleLocationId])
+  @@map("locations")
+}
+
+// ============================================================================
+// REVIEWS
+// ============================================================================
+
+model Review {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  locationId        String
+  googleReviewId    String    @unique
+  authorName        String
+  authorEmail       String?
+  rating            Int
+  title             String?
+  content           String
+  language          String    @default("en")
+  status            ReviewStatus @default(APPROVED)
+  publishedAt       DateTime?
+  updateDate        DateTime?
+  responseCount     Int       @default(0)
+  helpful           Int       @default(0)
+  notHelpful        Int       @default(0)
+  synced            Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  location          Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  replies           ReviewReply[]
+
+  @@index([workspaceId])
+  @@index([locationId])
+  @@index([rating])
+  @@index([status])
+  @@index([publishedAt])
+  @@map("reviews")
+}
+
+model ReviewReply {
+  id                String    @id @default(cuid())
+  reviewId          String
+  userId            String
+  content           String
+  isOwnerReply      Boolean   @default(false)
+  publishedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  review            Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_replies")
+}
+
+// ============================================================================
+// POSTS & PHOTOS
+// ============================================================================
+
+model Post {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  locationId        String
+  userId            String
+  title             String?
+  content           String
+  postType          String    @default("UPDATE") // UPDATE | PRODUCT | EVENT | OFFER
+  callToActionType  String?
+  callToActionUrl   String?
+  status            PostStatus @default(DRAFT)
+  scheduledAt       DateTime?
+  publishedAt       DateTime?
+  expiresAt         DateTime?
+  views             Int       @default(0)
+  clicks            Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  location          Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([locationId])
+  @@index([status])
+  @@index([publishedAt])
+  @@map("posts")
+}
+
+model Photo {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  locationId        String
+  userId            String
+  googlePhotoId     String?
+  url               String
+  thumbnailUrl      String?
+  caption           String?
+  status            PhotoStatus @default(UPLOADING)
+  uploadedBy        String?
+  uploadedAt        DateTime?
+  views             Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  location          Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([locationId])
+  @@index([status])
+  @@map("photos")
+}
+
+// ============================================================================
+// ANALYTICS
+// ============================================================================
+
+model Analytics {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  locationId        String
+  date              DateTime
+  period            String    @default("day") // day | week | month
+  
+  // Review metrics
+  reviewCount       Int       @default(0)
+  reviewRating      Float     @default(0)
+  reviewSentiment   String?   // positive | neutral | negative
+  
+  // Search metrics
+  searches          Int       @default(0)
+  directions        Int       @default(0)
+  websiteClicks     Int       @default(0)
+  phoneClicks       Int       @default(0)
+  
+  // Post metrics
+  postImpressions   Int       @default(0)
+  postEngagement    Int       @default(0)
+  
+  // Photo metrics
+  photoViews        Int       @default(0)
+  
+  // Customer actions
+  conversions       Int       @default(0)
+  bookings          Int       @default(0)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  location          Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, locationId, date, period])
+  @@index([workspaceId])
+  @@index([locationId])
+  @@index([date])
+  @@map("analytics")
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id                String    @id @default(cuid())
+  userId            String
+  type              NotificationType
+  status            NotificationStatus @default(UNREAD)
+  title             String
+  message           String
+  data              String?   // JSON
+  actionUrl         String?
+  readAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// AUDIT LOGGING
+// ============================================================================
+
+model AuditLog {
+  id                String    @id @default(cuid())
+  organizationId    String
+  userId            String?
+  action            AuditActionType
+  resourceType      AuditResourceType
+  resourceId        String
+  resourceName      String?
+  changes           String?   // JSON
+  ipAddress         String?
+  userAgent         String?
+  status            String    @default("SUCCESS") // SUCCESS | FAILURE
+  failureReason     String?
+  createdAt         DateTime  @default(now())
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// INTEGRATIONS & JOBS
+// ============================================================================
+
+model Integration {
+  id                String    @id @default(cuid())
+  organizationId    String
+  name              String
+  type              String
+  config            String?   // JSON
+  isActive          Boolean   @default(true)
+  lastSyncAt        DateTime?
+  nextSyncAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("integrations")
+}
+
+model SyncJob {
+  id                String    @id @default(cuid())
+  businessAccountId String
+  type              SyncJobType
+  status            JobStatus @default(PENDING)
+  progress          Int       @default(0)
+  totalItems        Int       @default(0)
+  processedItems    Int       @default(0)
+  failedItems       Int       @default(0)
+  error             String?
+  lastError         String?
+  retryCount        Int       @default(0)
+  maxRetries        Int       @default(3)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  businessAccount   BusinessAccount @relation(fields: [businessAccountId], references: [id], onDelete: Cascade)
+
+  @@index([businessAccountId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@map("sync_jobs")
+}

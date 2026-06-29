@@ -1,0 +1,8 @@
+{
+  "/api/ai/route": "app/api/ai/route.js",
+  "/page": "app/page.js",
+  "/login/page": "app/login/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/locations/page": "app/locations/page.js"
+}

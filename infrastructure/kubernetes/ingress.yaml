@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gbp-ingress
+  namespace: gbp
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - "app.example.com"
+    - "api.example.com"
+    secretName: gbp-tls
+  rules:
+  - host: "app.example.com"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gbp-frontend
+            port:
+              number: 3000
+  - host: "api.example.com"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gbp-backend
+            port:
+              number: 3000

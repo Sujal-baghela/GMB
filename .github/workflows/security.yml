@@ -1,0 +1,48 @@
+name: Security
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+
+    - name: Install dependencies (backend)
+      run: npm install
+      working-directory: ./backend
+
+    - name: Audit backend
+      run: npm audit --audit-level=moderate
+      working-directory: ./backend
+      continue-on-error: true
+
+    - name: Install dependencies (frontend)
+      run: npm install
+      working-directory: ./frontend
+
+    - name: Audit frontend
+      run: npm audit --audit-level=moderate
+      working-directory: ./frontend
+      continue-on-error: true
+
+  sast-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/typescript
+          p/ci

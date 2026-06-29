@@ -1,0 +1,31 @@
+{
+  "name": "google-business-profile-platform",
+  "version": "1.0.0",
+  "description": "Enterprise Google Business Profile Management Platform",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "start": "npm start --workspaces",
+    "test": "npm test --workspaces",
+    "test:watch": "npm run test:watch --workspaces",
+    "test:cov": "npm run test:cov --workspaces",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces",
+    "migrate": "npm run migrate --workspace=backend",
+    "seed": "npm run seed --workspace=backend",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3"
+  }
+}

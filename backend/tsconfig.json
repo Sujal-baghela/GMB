@@ -4,7 +4,7 @@
     "target": "ES2020",
     "lib": ["ES2020"],
     "declaration": true,
-    "outDir": "../dist",
+    "outDir": "./dist",
     "rootDir": "./src",
     "removeComments": true,
     "experimentalDecorators": true,

@@ -39,10 +39,11 @@ import { AppService } from './app.service';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        connection: {
+       connection: {
           host: configService.get<string>('REDIS_HOST', 'localhost'),
           port: configService.get<number>('REDIS_PORT', 6379),
           password: configService.get<string>('REDIS_PASSWORD'),
+          tls: configService.get<string>('NODE_ENV') === 'production' ? {} : undefined,
         },
       }),
       inject: [ConfigService],
